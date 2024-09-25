@@ -1,4 +1,9 @@
 using LinearAlgebra
+# using Plots
+# using GLMakie
+
+include("plot_helper.jl")
+using .PlotHelper
 
 function lax_friedrichs(f, u0, dx, dt, T)
     N = length(u0)
@@ -30,11 +35,11 @@ function central_upwind(f, U_0, dx, dt, T)
     for i in 2:M+1
         for j in 1:N
         if j == 1
-            U[i, j] = U[i-1, j] - dt/(2*dx)*(f(U[i-1, N]) - f(U[i-1, j+1]))
+            U[i, j] = U[i-1, j] + dt/(2*dx)*(f(U[i-1, N]) - f(U[i-1, j+1]))
         elseif j == N
-            U[i, j] = U[i-1, j] - dt/(2*dx)*(f(U[i-1, j-1]) - f(U[i-1, 1]))
+            U[i, j] = U[i-1, j] + dt/(2*dx)*(f(U[i-1, j-1]) - f(U[i-1, 1]))
         else
-            U[i, j] = U[i-1, j] - dt/(2*dx)*(f(U[i-1, j-1]) - f(U[i-1, j+1]))
+            U[i, j] = U[i-1, j] + dt/(2*dx)*(f(U[i-1, j-1]) - f(U[i-1, j+1]))
         end
         end
     end
@@ -78,14 +83,19 @@ dx = 0.1
 dt = 0.01
 T = 20
 
-f(x) = x^2
-J(x) = 2*x
+f(x) = a*x
+J(x) = a
 
 U_friedrichs = lax_friedrichs(f, u_0, dx, dt, T)
 U_upwind = central_upwind(f, u_0, dx, dt, T)
 U_wendroff = lax_wendroff(f, J, u_0, dx, dt, T)
 
 t = range(0, T, length=size(U_friedrichs, 1))
-surface(x, t, U_friedrichs, title="Lax-Friedrichs")
-surface(x, t, U_upwind, title="Central Upwind")
-surface(x, t, U_wendroff, title="Lax-Wendroff")
+# surface(x, t, U_friedrichs, title="Lax-Friedrichs")
+# surface(x, t, U_upwind, title="Central Upwind")
+# surface(x, t, U_wendroff, title="Lax-Wendroff")
+
+#plot_2d(x, t, U_friedrichs)
+#plot_2d(x, t, U_upwind)
+#plot_2d(x, t, U_wendroff)
+plot_2ds(x, t, [U_friedrichs, U_upwind, U_wendroff], ["Lax-Friedrichs", "Central Upwind", "Lax-Wendroff"])
