@@ -1,5 +1,6 @@
 using Plots
 using LinearAlgebra
+using .PlotHelper
 
 arr = range(0, 2*pi, 100)
 length(arr)
@@ -21,3 +22,12 @@ ceil(Int, 10/0.03)
 A = Tridiagonal([-1, -1], [1, 1, 1], [-1, -1])
 A_mat = Matrix(A)
 A_mat[1, 1:3]
+
+x = range(-2, stop=2, length=100)
+y = range(-2, stop=2, length=100)
+f(x,y) = x*sin(y)
+z = f.(x', y)
+
+println(findfirst(isequal(0), x))
+
+surface(x, y, z)
