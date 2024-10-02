@@ -2,7 +2,7 @@ module ScalarSolvers
     export lax_friedrichs
     export central_diff
     export lax_wendroff
-    export high_res_torjei
+    export low_res_torjei
 
     function lax_friedrichs(f, u0, dx, dt, T)
         N = length(u0)
@@ -91,7 +91,7 @@ module ScalarSolvers
         end
     end
 
-    function high_res_torjei(f, J, U_0, dx, dt, T)
+    function low_res_torjei(f, J, U_0, dx, dt, T)
         N = length(U_0)
         M = ceil(Int, T/dt)
 
@@ -118,4 +118,5 @@ module ScalarSolvers
         end
         return U
     end
+
 end

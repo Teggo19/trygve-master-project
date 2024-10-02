@@ -36,7 +36,6 @@ module ScalarTestFunctions
         for i in div(N, 3)+1:div(2N, 3)
             u[i] = exp(1)*exp(-1/(1 - ((x[i]*2 - (x_1 + x_2))/(x_2-x_1))^2))
         end
-        print(u[div(N, 3)])
         
         return u
     end

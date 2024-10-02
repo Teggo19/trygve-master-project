@@ -15,11 +15,11 @@ using .ScalarTestFunctions
 a = 1
 
 x = range(0, 2*pi, 100)
-u_0 = step_func(x)
+u_0 = triangle(x)
 N = length(x)
 
 dx = 0.1
-dt = 0.01
+dt = 0.05
 T = 20
 
 f(x) = a*x
