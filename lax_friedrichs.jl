@@ -15,11 +15,11 @@ using .ScalarTestFunctions
 a = 1
 
 x = range(0, 2*pi, 100)
-u_0 = triangle(x)
+u_0 = [bump(x[1:50]); square(x[51:end])]
 N = length(x)
 
-dx = 0.1
-dt = 0.05
+dx = x[2] - x[1]
+dt = dx/a*0.9
 T = 20
 
 f(x) = a*x
@@ -28,7 +28,7 @@ J(x) = a
 U_friedrichs = lax_friedrichs(f, u_0, dx, dt, T)
 # U_upwind = central_diff(f, u_0, dx, dt, T)
 U_wendroff = lax_wendroff(f, J, u_0, dx, dt, T)
-U_high_res = high_res_torjei(f, J, u_0, dx, dt, T)
+# U_high_res = low_res_torjei(f, J, u_0, dx, dt, T)
 
 t = range(0, T, length=size(U_friedrichs, 1))
 # surface(x, t, U_friedrichs, title="Lax-Friedrichs")
@@ -38,4 +38,4 @@ t = range(0, T, length=size(U_friedrichs, 1))
 #plot_2d(x, t, U_friedrichs)
 #plot_2d(x, t, U_upwind)
 #plot_2d(x, t, U_wendroff)
-plot_2ds(x, t, [U_friedrichs, U_wendroff, U_high_res], ["Lax-Friedrichs", "Lax-Wendroff", "High res"])
+plot_2ds(x, t, [U_friedrichs, U_wendroff], ["Lax-Friedrichs", "Lax-Wendroff"])

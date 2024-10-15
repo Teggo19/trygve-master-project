@@ -51,22 +51,23 @@ module ScalarSolvers
 
         U = fill(1.0, (M+1, N))
         U[1, 1:N] = U_0
+        u_1 = 0.0
+        u_2 = 0.0
         for i in 2:M+1
             for j in 1:N
+                if j == 1
+                    u_1 = 0.5*(U[i-1, N] + U[i-1, j]) - 0.5*dt/dx*(f(U[i-1, j]) - f(U[i-1, N]))
+                    u_2 = 0.5*(U[i-1, j] + U[i-1, j+1]) - 0.5*dt/dx*(f(U[i-1, j+1]) - f(U[i-1, j]))
+                    
+                elseif j == N
+                    u_2 = 0.5*(U[i-1, j] + U[i-1, 1]) - 0.5*dt/dx*(f(U[i-1, 1]) - f(U[i-1, j]))
 
-                if j==1
-                    J_1 = J(0.5*(U[i-1, j] + U[i-1, j+1]))
-                    J_2 = J(0.5*(U[i-1, N] + U[i-1, j]))
-                    U[i, j] = U[i-1, j] - 0.5*dt/dx*(f(U[i-1, j+1]) - f(U[i-1, N])) + 0.5*(dt/dx)^2*(J_1*(f(U[i-1, j+1])-f(U[i-1, j])) - J_2*(f(U[i-1, j] - f(U[i-1, N]))))
-                elseif j==N
-                    J_1 = J(0.5*(U[i-1, j] + U[i-1, 1]))
-                    J_2 = J(0.5*(U[i-1, j-1] + U[i-1, j]))
-                    U[i, j] = U[i-1, j] - 0.5*dt/dx*(f(U[i-1, 1]) - f(U[i-1, j-1])) + 0.5*(dt/dx)^2*(J_1*(f(U[i-1, 1])-f(U[i-1, j])) - J_2*(f(U[i-1, j] - f(U[i-1, j-1]))))
                 else
-                    J_1 = J(0.5*(U[i-1, j] + U[i-1, j+1]))
-                    J_2 = J(0.5*(U[i-1, j-1] + U[i-1, j]))
-                    U[i, j] = U[i-1, j] - 0.5*dt/dx*(f(U[i-1, j+1]) - f(U[i-1, j-1])) + 0.5*(dt/dx)^2*(J_1*(f(U[i-1, j+1])-f(U[i-1, j])) - J_2*(f(U[i-1, j] - f(U[i-1, j-1]))))
+                    u_2 = 0.5*(U[i-1, j] + U[i-1, j+1]) - 0.5*dt/dx*(f(U[i-1, j+1]) - f(U[i-1, j]))
+                    
                 end
+                U[i, j] = U[i-1, j] - dt/dx*(f(u_2) - f(u_1))
+                u_1 = u_2
             end
         end
         return U
