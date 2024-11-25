@@ -5,14 +5,9 @@ using LinearAlgebra
 
 using BenchmarkTools
 
-include("plot_helper.jl")
-using .PlotHelper
-
-include("scalar_solvers.jl")
-using .ScalarSolvers
-
-include("scalar_test_functions.jl")
-using .ScalarTestFunctions
+# use the TrafficSim.jl module
+include("../src/TrafficSim.jl")
+using .TrafficSim
 
 function step_solver(u, u_next, f, J, dx, dt, flux)
     N = length(u)
@@ -43,10 +38,10 @@ function fv_solver(U_0, dx, dt, T)
         U, U_next = U_next, U
         @cuda threads=numthreads blocks=numblocks lax_friedrichs_kernel!(U, U_next, dx, dt, N)
         
-        u[i, :] = Array(U_next)
+        #u[i, :] = Array(U_next)
         
     end
-    return u
+    return U_next
 end
 
 function lax_friedrichs_kernel!(u_0, u_1, dx, dt, N)
@@ -77,9 +72,9 @@ function test_func(x)
         return 0
     end
 end
-N = 1000
+N = 100
 x = range(0, 1, N)
-u_0 = [bump(x[1:50]); square(x[51:end])]
+u_0 = [TrafficSim.bump(x[1:50]); TrafficSim.square(x[51:end])]
 # u_0 = test_func.(x)
 N = length(x)
 

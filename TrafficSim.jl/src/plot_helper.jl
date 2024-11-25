@@ -18,39 +18,38 @@ lines!(arr, y)
 
 fig
 =#
-module PlotHelper
-    using GLMakie
 
-    export plot_2d
-    export plot_2ds
+using GLMakie
 
-    function plot_2d(xs, ts, u)
-        fig = Figure()
-        ax = Axis(fig[1, 1])
-        sl_t = Slider(fig[2, 1], range = ts, startvalue = 0)
+export plot_2d
+export plot_2ds
 
-        limits!(ax, xs[1], xs[end], -2, 2)
+function plot_2d(xs, ts, u)
+    fig = Figure()
+    ax = Axis(fig[1, 1])
+    sl_t = Slider(fig[2, 1], range = ts, startvalue = 0)
+
+    limits!(ax, xs[1], xs[end], -2, 2)
+    y = lift(sl_t.value) do t
+        u[findfirst(isequal(t), ts), :]
+    end
+    
+    lines!(xs, y)
+    fig
+end
+
+function plot_2ds(xs, ts, u_arr, labels)
+    fig = Figure()
+    ax = Axis(fig[1, 1])
+    sl_t = Slider(fig[2, 1], range = ts, startvalue = 0)
+
+    limits!(ax, xs[1], xs[end], -2, 2)
+    for (i, u) in enumerate(u_arr)
         y = lift(sl_t.value) do t
             u[findfirst(isequal(t), ts), :]
         end
-        
-        lines!(xs, y)
-        fig
+        lines!(xs, y, label=labels[i])
     end
-
-    function plot_2ds(xs, ts, u_arr, labels)
-        fig = Figure()
-        ax = Axis(fig[1, 1])
-        sl_t = Slider(fig[2, 1], range = ts, startvalue = 0)
-
-        limits!(ax, xs[1], xs[end], -2, 2)
-        for (i, u) in enumerate(u_arr)
-            y = lift(sl_t.value) do t
-                u[findfirst(isequal(t), ts), :]
-            end
-            lines!(xs, y, label=labels[i])
-        end
-        axislegend(ax)
-        fig
-    end
+    axislegend(ax)
+    fig
 end
