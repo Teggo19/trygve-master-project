@@ -98,7 +98,7 @@ end
 
 CUDA.@profile U_gpu = fv_solver(u_0, dx, dt, T)
 
-@btime U_gpu = fv_solver(u_0, dx, dt, T);
+U_gpu = fv_solver(u_0, dx, dt, T);
 @btime U_friedrichs = lax_friedrichs(f, u_0, dx, dt, T, true);
 
 t = range(0, T, length=size(U_gpu, 1))

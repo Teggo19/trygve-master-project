@@ -75,3 +75,43 @@ function central_diff(f, U_0, dx, dt, T)
 end
 
 
+function high_res_torjei(f, J, U_0, dx, dt, T)
+    N = length(U_0)
+    M = ceil(Int, T/dt)
+
+    U = fill(1.0, (M+1, N))
+    U[1, 1:N] = U_0
+
+    function L(u)
+        l = zeros(N)
+        F = 0
+        for i in 1:N
+            if i == 1
+                F = 0.5*(f(u[N]) + f(u[1])) - 0.5*(max(abs(J(u[N])), abs(J(u[1]))))*(u[1] - u[N])
+                l[i] = -F
+                l[N] = F
+                F = 0.5*(f(u[i]) + f(u[i+1])) - 0.5*(max(abs(J(u[i])), abs(J(u[i+1]))))*(u[i+1] - u[i])
+                l[i] += F
+                
+            elseif i == N
+                l[i] -= F
+            else
+                l[i] = -F
+                F = 0.5*(f(u[i]) + f(u[i+1])) - 0.5*(max(abs(J(u[i])), abs(J(u[i+1]))))*(u[i+1] - u[i])
+                l[i] += F
+            end
+            l[i] = -l[i]/dx
+
+        end
+
+        return l
+    end    
+    
+    for i in 2:M+1
+        p_star = U[i-1, :] + dt*L(U[i-1, :])
+        p_starstar = p_star + dt*L(p_star)
+        U[i, :] = 0.5*(U[i-1, :] + p_starstar)
+    end
+
+    return U
+end
