@@ -38,6 +38,14 @@ function traffic_solve(trafficProblem::TrafficProblem, T, dt::Float32, U_0)
     # make 2D array to store the density of the roads
     #rho = zeros(Float32, length(trafficProblem.roads)*N_max)
     rho = CUDA.fill(1.0f0, length(trafficProblem.roads)*N_max)
+
+    rho_total = zeros(Real, M+1, length(trafficProblem.roads), N_max)
+
+    for road in trafficProblem.roads
+        road_index = road.id
+        rho_total[1, road_index, 1:road.N] = U_0[road_index]
+    end
+
     for i in 1:length(trafficProblem.roads)
         j = (i-1)*N_max + 1
         rho[j:j+N_vals[i]-1] = U_0[i]
@@ -65,13 +73,18 @@ function traffic_solve(trafficProblem::TrafficProblem, T, dt::Float32, U_0)
             intersection_solver!(rho, rho_1, intersection.incoming, intersection.outgoing, dt, gammas, N_max, N_vals)
         end
         #CUDA.@sync
-        #rho, rho_1 = rho_1, rho
+        rho, rho_1 = rho_1, rho
+        for road in trafficProblem.roads
+            road_index = road.id
+            rho_cpu = Array(rho)
+            rho_total[i, road_index, 1:road.N] = rho_cpu[N_max*(road_index-1)+1:N_max*(road_index-1)+road.N]
+            println("i : ", i, " road_index : ", road_index, " rho : ", rho_total[i, road_index, 1:road.N])
+        end
     end
-    rho_2 = CUDA.fill(1.0f0, length(trafficProblem.roads)*N_max)
-    print(length(trafficProblem.roads))
+    
 
     rho_cpu = collect(rho)
-    return rho_cpu
+    return rho_cpu, rho_total
 end
 
 function road_solver!(u_0::CuDeviceVector{Float32}, u_1::CuDeviceVector{Float32}, N_vals::CuDeviceVector{Int}, N_max::Int, gammas::CuDeviceVector{Float32}, dt::Float32, dxs::CuDeviceVector{Float32})
@@ -94,9 +107,37 @@ function road_solver!(u_0::CuDeviceVector{Float32}, u_1::CuDeviceVector{Float32}
         u_1[i] = u_0[i]
         return 
 
-    elseif j <= 2 || j >= N_vals[road_index] - 2
-        u_1[i] = u_0[i]
-        return
+    elseif j == 2
+        u_1[i] = u_0[i] - 0.5f0 * dt / dx * (F(u_0[i], u_0[i+1], gamma) - F(u_0[i-1], u_0[i], gamma)
+        + F(u_0[i] - dt/dx*(F(u_0[i], u_0[i+1], gamma) - F(u_0[i-1], u_0[i], gamma)), 
+        u_0[i+1] - dt/dx*(F(u_0[i+1], u_0[i+2], gamma) - F(u_0[i], u_0[i+1], gamma)), gamma)
+
+        - F(u_0[i-1] - dt/dx*(F(u_0[i-1], u_0[i], gamma) - F(u_0[i-1], u_0[i-1], gamma)), 
+        u_0[i] - dt/dx*(F(u_0[i], u_0[i+1], gamma) - F(u_0[i-1], u_0[i], gamma)), gamma))
+    
+    elseif j == 1
+        u_1[i] = u_0[i] - 0.5f0 * dt / dx * (F(u_0[i], u_0[i+1], gamma) - F(u_0[i], u_0[i], gamma)
+                    + F(u_0[i] - dt/dx*(F(u_0[i], u_0[i+1], gamma) - F(u_0[i], u_0[i], gamma)), 
+                    u_0[i+1] - dt/dx*(F(u_0[i+1], u_0[i+2], gamma) - F(u_0[i], u_0[i+1], gamma)), gamma)
+
+                    - F(u_0[i] - dt/dx*(F(u_0[i], u_0[i], gamma) - F(u_0[i], u_0[i], gamma)), 
+                    u_0[i] - dt/dx*(F(u_0[i], u_0[i+1], gamma) - F(u_0[i], u_0[i], gamma)), gamma))
+    
+    elseif j == N_vals[road_index] - 1
+        u_1[i] = u_0[i] - 0.5f0 * dt / dx * (F(u_0[i], u_0[i+1], gamma) - F(u_0[i], u_0[i], gamma)
+                    + F(u_0[i] - dt/dx*(F(u_0[i], u_0[i+1], gamma) - F(u_0[i], u_0[i], gamma)), 
+                    u_0[i+1] - dt/dx*(F(u_0[i+1], u_0[i+1], gamma) - F(u_0[i], u_0[i+1], gamma)), gamma)
+
+                    - F(u_0[i] - dt/dx*(F(u_0[i], u_0[i], gamma) - F(u_0[i], u_0[i], gamma)), 
+                    u_0[i] - dt/dx*(F(u_0[i], u_0[i+1], gamma) - F(u_0[i], u_0[i], gamma)), gamma))
+    
+    elseif j == N_vals[road_index]
+        u_1[i] = u_0[i] - 0.5f0 * dt / dx * (F(u_0[i], u_0[i], gamma) - F(u_0[i], u_0[i], gamma)
+                    + F(u_0[i] - dt/dx*(F(u_0[i], u_0[i], gamma) - F(u_0[i], u_0[i], gamma)), 
+                    u_0[i+1] - dt/dx*(F(u_0[i], u_0[i], gamma) - F(u_0[i], u_0[i], gamma)), gamma)
+
+                    - F(u_0[i] - dt/dx*(F(u_0[i], u_0[i], gamma) - F(u_0[i], u_0[i], gamma)), 
+                    u_0[i] - dt/dx*(F(u_0[i], u_0[i], gamma) - F(u_0[i], u_0[i], gamma)), gamma))
     
     else 
         
@@ -162,7 +203,7 @@ end
 
 
 
-N = 100
+N = 20
 
 road_1 = Road(1, 100, 10, 0.5, N, 100/N)
 road_2 = Road(2, 100, 5, 0.5, N, 100/N)
@@ -175,15 +216,27 @@ x = range(0, 100, N)
 
 include("scalar_test_functions.jl")
 
-U_0 = [[bump(x[1:50]); square(x[51:end])], zeros(N)]
+U_0 = [bump(x), zeros(N)]
 
-T = 10
+
+T = 13
 dt::Float32 = 0.1
 
-rho = traffic_solve(trafficProblem, T, dt, U_0)
+rho, rho_total = traffic_solve(trafficProblem, T, dt, U_0)
+
+rho_1 = rho_total[:, 1, 1:N]
+rho_2 = rho_total[:, 2, 1:N]
+
+print(size(rho_1))
+t = range(0, T, length = size(rho_1)[1])
+
+include("plot_helper.jl")
+
+plot_2ds(x, t, [rho_1, rho_2], ["Road 1", "Road 2"])
+
 
 # plot the solution using GLMakie
-
+"""
 using GLMakie
 
 fig = Figure()
@@ -195,4 +248,4 @@ for i in 1:length(trafficProblem.roads)
     lines!(ax, x, rho[j:j+N-1], color = :blue)
 end
 fig
-
+"""

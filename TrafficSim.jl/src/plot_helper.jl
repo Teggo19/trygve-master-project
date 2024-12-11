@@ -21,8 +21,8 @@ fig
 
 using GLMakie
 
-export plot_2d
-export plot_2ds
+#export plot_2d
+#export plot_2ds
 
 function plot_2d(xs, ts, u)
     fig = Figure()
