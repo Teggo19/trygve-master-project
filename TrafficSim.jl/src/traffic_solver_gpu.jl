@@ -17,6 +17,9 @@ end
 end
 
 function traffic_solve(trafficProblem::TrafficProblem, T, dt::Float32, U_0)
+    # Set to true if you want to export every time step
+    continuous_export = false
+
     # Add potential timestamps to be exported with the final solution
     timestamps = []
     
@@ -26,7 +29,7 @@ function traffic_solve(trafficProblem::TrafficProblem, T, dt::Float32, U_0)
     N_vals = [road.N for road in trafficProblem.roads]
     N_max = maximum(N_vals)
 
-    N_max = max(N_max, n_threads)
+    #N_max = max(N_max, n_threads)
 
     #n_blocks = cumsum([ceil(Int, N/n_threads) for N in N_vals])
     #n_blocks_tot = n_blocks[end]
@@ -38,8 +41,9 @@ function traffic_solve(trafficProblem::TrafficProblem, T, dt::Float32, U_0)
     # make 2D array to store the density of the roads
     #rho = zeros(Float32, length(trafficProblem.roads)*N_max)
     rho = CUDA.fill(1.0f0, length(trafficProblem.roads)*N_max)
-
-    rho_total = zeros(Real, M+1, length(trafficProblem.roads), N_max)
+    if continuous_export
+        rho_total = zeros(Real, M+1, length(trafficProblem.roads), N_max)
+    end
 
     for road in trafficProblem.roads
         road_index = road.id
@@ -74,11 +78,12 @@ function traffic_solve(trafficProblem::TrafficProblem, T, dt::Float32, U_0)
         end
         #CUDA.@sync
         rho, rho_1 = rho_1, rho
-        for road in trafficProblem.roads
-            road_index = road.id
-            rho_cpu = Array(rho)
-            rho_total[i, road_index, 1:road.N] = rho_cpu[N_max*(road_index-1)+1:N_max*(road_index-1)+road.N]
-            println("i : ", i, " road_index : ", road_index, " rho : ", rho_total[i, road_index, 1:road.N])
+        if continuous_export
+            for road in trafficProblem.roads
+                road_index = road.id
+                rho_cpu = Array(rho)
+                rho_total[i, road_index, 1:road.N] = rho_cpu[N_max*(road_index-1)+1:N_max*(road_index-1)+road.N]
+            end
         end
     end
     
@@ -89,8 +94,8 @@ end
 
 function road_solver!(u_0::CuDeviceVector{Float32}, u_1::CuDeviceVector{Float32}, N_vals::CuDeviceVector{Int}, N_max::Int, gammas::CuDeviceVector{Float32}, dt::Float32, dxs::CuDeviceVector{Float32})
     # get the index of the block
-    #i = threadIdx().x + (blockIdx().x - 1)*N_max
-    i = 1
+    i = threadIdx().x + (blockIdx().x - 1)*N_max
+    
     if i > length(u_0) || i < 1
         return
     end
@@ -124,24 +129,25 @@ function road_solver!(u_0::CuDeviceVector{Float32}, u_1::CuDeviceVector{Float32}
                     u_0[i] - dt/dx*(F(u_0[i], u_0[i+1], gamma) - F(u_0[i], u_0[i], gamma)), gamma))
     
     elseif j == N_vals[road_index] - 1
-        u_1[i] = u_0[i] - 0.5f0 * dt / dx * (F(u_0[i], u_0[i+1], gamma) - F(u_0[i], u_0[i], gamma)
-                    + F(u_0[i] - dt/dx*(F(u_0[i], u_0[i+1], gamma) - F(u_0[i], u_0[i], gamma)), 
-                    u_0[i+1] - dt/dx*(F(u_0[i+1], u_0[i+1], gamma) - F(u_0[i], u_0[i+1], gamma)), gamma)
+        u_1[i] = u_0[i] -0.5f0 * dt / dx * (F(u_0[i], u_0[i+1], gamma) - F(u_0[i-1], u_0[i], gamma)
+                + F(u_0[i] - dt/dx*(F(u_0[i], u_0[i+1], gamma) - F(u_0[i-1], u_0[i], gamma)), 
+                u_0[i+1] - dt/dx*(F(u_0[i+1], u_0[i+1], gamma) - F(u_0[i], u_0[i+1], gamma)), gamma)
 
-                    - F(u_0[i] - dt/dx*(F(u_0[i], u_0[i], gamma) - F(u_0[i], u_0[i], gamma)), 
-                    u_0[i] - dt/dx*(F(u_0[i], u_0[i+1], gamma) - F(u_0[i], u_0[i], gamma)), gamma))
+                - F(u_0[i-1] - dt/dx*(F(u_0[i-1], u_0[i], gamma) - F(u_0[i-2], u_0[i-1], gamma)), 
+                u_0[i] - dt/dx*(F(u_0[i], u_0[i+1], gamma) - F(u_0[i-1], u_0[i], gamma)), gamma))
     
     elseif j == N_vals[road_index]
-        u_1[i] = u_0[i] - 0.5f0 * dt / dx * (F(u_0[i], u_0[i], gamma) - F(u_0[i], u_0[i], gamma)
-                    + F(u_0[i] - dt/dx*(F(u_0[i], u_0[i], gamma) - F(u_0[i], u_0[i], gamma)), 
-                    u_0[i+1] - dt/dx*(F(u_0[i], u_0[i], gamma) - F(u_0[i], u_0[i], gamma)), gamma)
+        u_1[i] = u_0[i] -0.5f0 * dt / dx * (F(u_0[i], u_0[i], gamma) - F(u_0[i-1], u_0[i], gamma)
+                + F(u_0[i] - dt/dx*(F(u_0[i], u_0[i], gamma) - F(u_0[i-1], u_0[i], gamma)), 
+                u_0[i] - dt/dx*(F(u_0[i], u_0[i], gamma) - F(u_0[i], u_0[i], gamma)), gamma)
 
-                    - F(u_0[i] - dt/dx*(F(u_0[i], u_0[i], gamma) - F(u_0[i], u_0[i], gamma)), 
-                    u_0[i] - dt/dx*(F(u_0[i], u_0[i], gamma) - F(u_0[i], u_0[i], gamma)), gamma))
+                - F(u_0[i-1] - dt/dx*(F(u_0[i-1], u_0[i], gamma) - F(u_0[i-2], u_0[i-1], gamma)), 
+                u_0[i] - dt/dx*(F(u_0[i], u_0[i], gamma) - F(u_0[i-1], u_0[i], gamma)), gamma))
     
     else 
-        
-        u_1[i] = u_0[i] - 0.5f0 * dt / dx * (F(u_0[i], u_0[i+1], gamma) - F(u_0[i-1], u_0[i], gamma)
+        #update_rho!(update, u_0[i-2], u_0[i-1], u_0[i], u_0[i+1], u_0[i+2]) 
+        #u_1[i] = u_0[i] - update
+        u_1[i] = u_0[i] -0.5f0 * dt / dx * (F(u_0[i], u_0[i+1], gamma) - F(u_0[i-1], u_0[i], gamma)
                     + F(u_0[i] - dt/dx*(F(u_0[i], u_0[i+1], gamma) - F(u_0[i-1], u_0[i], gamma)), 
                     u_0[i+1] - dt/dx*(F(u_0[i+1], u_0[i+2], gamma) - F(u_0[i], u_0[i+1], gamma)), gamma)
 
@@ -150,6 +156,15 @@ function road_solver!(u_0::CuDeviceVector{Float32}, u_1::CuDeviceVector{Float32}
         
     end
     return
+end
+
+function update_rho!(update::Real, u_2::Real, u_1::Real, u::Real, u1::Real, u2::Real)::Real
+    update = 0.5f0 * dt / dx * (F(u, u1, gamma) - F(u_1, u, gamma)
+                    + F(u - dt/dx*(F(u, u1, gamma) - F(u_1, u, gamma)), 
+                    u1 - dt/dx*(F(u1, u2, gamma) - F(u, u1, gamma)), gamma)
+
+                    - F(u_1 - dt/dx*(F(u_1, u, gamma) - F(u_2, u_1, gamma)), 
+                    u - dt/dx*(F(u, u1, gamma) - F(u_1, u, gamma)), gamma))
 end
 
 function intersection_solver!(u_0, u_1, roads_incoming, roads_outgoing, dt, gammas, N_max, N_vals)
@@ -177,8 +192,8 @@ function intersection_solver!(u_0, u_1, roads_incoming, roads_outgoing, dt, gamm
 end
 
 function one_to_one(u_0::CuDeviceVector{Float32}, u_1::CuDeviceVector{Float32}, road_in_id::Int, road_out_id::Int, dx_i::Float32, dx_o::Float32, gammas::CuDeviceVector{Float32}, dt::Float32, N_max::Int, N_vals::CuDeviceVector{Int})
-    j_in = (road_in_id-1)*N_max + N_vals[road_in_id] - 1
-    j_out = (road_out_id-1)*N_max 
+    j_in = (road_in_id-1)*N_max + N_vals[road_in_id]
+    j_out = (road_out_id-1)*N_max +1
     
     in_rho = u_0[j_in]
     out_rho = u_0[j_out]
@@ -202,11 +217,11 @@ end
 
 
 
+# A bug happens when N=100, not sure why, also not support for N>512 at the moment
+N = 512
 
-N = 20
-
-road_1 = Road(1, 100, 10, 0.5, N, 100/N)
-road_2 = Road(2, 100, 5, 0.5, N, 100/N)
+road_1 = Road(1, 100, 40, 0.5, N, 100/N)
+road_2 = Road(2, 100, 40, 0.5, N, 100/N)
 
 intersection = Intersection(1, 1, 1, [road_1], [road_2])
 
@@ -219,7 +234,7 @@ include("scalar_test_functions.jl")
 U_0 = [bump(x), zeros(N)]
 
 
-T = 13
+T = 500
 dt::Float32 = 0.1
 
 rho, rho_total = traffic_solve(trafficProblem, T, dt, U_0)
