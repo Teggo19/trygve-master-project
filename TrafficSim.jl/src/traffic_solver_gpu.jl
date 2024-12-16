@@ -16,6 +16,17 @@ end
     return 0.5*(f(gamma, u_1) + f(gamma, u_2)) - 0.5*(max(abs(J(gamma, u_1)), abs(J(gamma, u_2)))*(u_2 - u_1))
 end
 
+
+function find_flux_prime!(rho, gammas, max_dt_arr, N_max, dxs)
+    i = threadIdx().x + (blockIdx().x - 1)*N_max
+    gamma = gammas[ceil(Int, i/N_max)]
+    dx = dxs[ceil(Int, i/N_max)]
+    max_dt_arr[i] = dx/abs(J(gamma, rho[i]))
+    # J(gamma, rho[i])
+    return 
+end
+
+
 function traffic_solve(trafficProblem::TrafficProblem, T, U_0)
     
 
@@ -52,7 +63,6 @@ function traffic_solve(trafficProblem::TrafficProblem, T, U_0)
         max_dt_arr = CUDA.fill(1.0f0, length(trafficProblem.roads)*N_max)
         @cuda threads=n_threads blocks=n_blocks_tot find_flux_prime!(rho, gammas, max_dt_arr, N_max, dxs)
         dt = CUDA.minimum(max_dt_arr)
-        
         t += dt
 
         # solve the traffic problem on the roads independently
@@ -108,6 +118,7 @@ function road_solver!(u_0, u_1, N_vals, N_max, gammas, dt, dxs)
         u_0[i] - dt/dx*(F(u_0[i], u_0[i+1], gamma) - F(u_0[i-1], u_0[i], gamma)), gamma))
     
     elseif j == 1
+        # Should do a check her to see if there is an intersection
         u_1[i] = u_0[i] - 0.5f0 * dt / dx * (F(u_0[i], u_0[i+1], gamma) - F(u_0[i], u_0[i], gamma)
                     + F(u_0[i] - dt/dx*(F(u_0[i], u_0[i+1], gamma) - F(u_0[i], u_0[i], gamma)), 
                     u_0[i+1] - dt/dx*(F(u_0[i+1], u_0[i+2], gamma) - F(u_0[i], u_0[i+1], gamma)), gamma)
@@ -124,6 +135,7 @@ function road_solver!(u_0, u_1, N_vals, N_max, gammas, dt, dxs)
                 u_0[i] - dt/dx*(F(u_0[i], u_0[i+1], gamma) - F(u_0[i-1], u_0[i], gamma)), gamma))
     
     elseif j == N_vals[road_index]
+        # Should do a check her to see if there is an intersection
         u_1[i] = u_0[i] -0.5f0 * dt / dx * (F(u_0[i], u_0[i], gamma) - F(u_0[i-1], u_0[i], gamma)
                 + F(u_0[i] - dt/dx*(F(u_0[i], u_0[i], gamma) - F(u_0[i-1], u_0[i], gamma)), 
                 u_0[i] - dt/dx*(F(u_0[i], u_0[i], gamma) - F(u_0[i], u_0[i], gamma)), gamma)
@@ -167,7 +179,7 @@ function intersection_solver!(u_0, u_1, roads_incoming, roads_outgoing, dt, gamm
         throw(ArgumentError("two to two intersection not implemented"))
     elseif n_in == 1 && n_out == 1
         # one to one intersection
-        @cuda one_to_one(u_0, u_1, roads_incoming[1].id, roads_outgoing[1].id, roads_incoming[1].dx, roads_outgoing[1].dx, gammas, dt, N_max, N_vals)
+        @cuda one_to_one!(u_0, u_1, roads_incoming[1].id, roads_outgoing[1].id, roads_incoming[1].dx, roads_outgoing[1].dx, gammas, dt, N_max, N_vals)
     elseif n_in == 1 && n_out == 2
         # one to two intersection
         # throw not implemented error
@@ -180,7 +192,8 @@ function intersection_solver!(u_0, u_1, roads_incoming, roads_outgoing, dt, gamm
     end
 end
 
-function one_to_one(u_0, u_1, road_in_id, road_out_id, dx_i, dx_o, gammas, dt, N_max, N_vals)
+function one_to_one!(u_0, u_1, road_in_id, road_out_id, dx_i, dx_o, gammas, dt, N_max, N_vals)
+
     j_in = (road_in_id-1)*N_max + N_vals[road_in_id]
     j_out = (road_out_id-1)*N_max +1
     
@@ -204,12 +217,4 @@ function one_to_one(u_0, u_1, road_in_id, road_out_id, dx_i, dx_o, gammas, dt, N
     return 
 end
 
-function find_flux_prime!(rho, gammas, max_dt_arr, N_max, dxs)
-    i = threadIdx().x + (blockIdx().x - 1)*N_max
-    gamma = gammas[ceil(Int, i/N_max)]
-    dx = dxs[ceil(Int, i/N_max)]
-    max_dt_arr[i] = dx/J(gamma, rho[i])
-    # J(gamma, rho[i])
-    return 
-end
 

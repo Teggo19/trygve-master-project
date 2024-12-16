@@ -5,11 +5,16 @@ using .TrafficSim
 N = 100
 
 road_1 = TrafficSim.Road{Float32}(1, 100, 20, 0.5, N, 1/N)
-road_2 = TrafficSim.Road{Float32}(2, 100, 20, 0.5, N, 1/N)
+road_2 = TrafficSim.Road{Float32}(2, 100, 30, 0.5, N, 1/N)
+road_3 = TrafficSim.Road{Float32}(3, 100, 20, 0.5, N, 1/N)
+road_4 = TrafficSim.Road{Float32}(4, 100, 20, 0.5, N, 1/N)
+
 
 intersection = TrafficSim.Intersection(1, 1, 1, [road_1], [road_2])
+intersection2 = TrafficSim.Intersection(2, 1, 1, [road_2], [road_3])
+intersection3 = TrafficSim.Intersection(3, 1, 1, [road_3], [road_4])
 
-trafficProblem = TrafficSim.TrafficProblem([road_1, road_2], [intersection])
+trafficProblem = TrafficSim.TrafficProblem([road_1, road_2, road_3, road_4], [intersection, intersection2, intersection3])
 
 x = range(0, 1, N)
 
@@ -21,24 +26,19 @@ for i in 1:N
 end
 
 
-U_0 = [U_01, zeros(N)]
+U_0 = [U_01, zeros(N), U_01, U_01]
 
 
-T = 3
-
+T = 4
+# time it
 rho  = TrafficSim.traffic_solve(trafficProblem, T, U_0)
 
+TrafficSim.plot_traffic(trafficProblem, rho, x)
 
-using GLMakie
+using CUDA
+CUDA.@profile rho  = TrafficSim.traffic_solve(trafficProblem, T, U_0)
 
-fig = Figure()
+using DelimitedFiles
 
-ax = Axis(fig[1, 1])
-colors = [:blue, :red, :green, :yellow, :purple, :orange, :black, :cyan]
-for i in 1:length(trafficProblem.roads)
-    j = (i-1)*N + 1
-    lines!(ax, x, rho[j:j+N-1], color = colors[i], label = "Road $i")
-end
+# writedlm("rho.csv", rho, ',')
 
-axislegend(ax)
-fig
