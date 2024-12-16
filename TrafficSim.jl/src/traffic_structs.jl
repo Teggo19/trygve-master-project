@@ -1,12 +1,10 @@
-
-
-struct Road
+struct Road{RealType <: AbstractFloat}
     id::Int
-    length::Float32
-    v_max::Float32
-    sigma::Float32
+    length::RealType
+    v_max::RealType
+    sigma::RealType
     N::Int
-    dx::Float32
+    dx::RealType
 end
 
 struct Intersection
