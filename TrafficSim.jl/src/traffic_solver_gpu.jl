@@ -76,7 +76,7 @@ function traffic_solve(trafficProblem::TrafficProblem, T, U_0)
         # solve the intersections
         for intersection in trafficProblem.intersections
             # solve the intersection
-            intersection_solver!(rho, rho_1, intersection.incoming, intersection.outgoing, dt, gammas, N_max, N_vals)
+            intersection_solver!(rho, rho_1, intersection, dt, gammas, N_max, N_vals)
         end
         #CUDA.@sync
         rho, rho_1 = rho_1, rho
@@ -168,18 +168,18 @@ function update_rho!(update, u_2, u_1, u, u1, u2, dt, dx, gamma)
     return
 end
 
-function intersection_solver!(u_0, u_1, roads_incoming, roads_outgoing, dt, gammas, N_max, N_vals)
+function intersection_solver!(u_0, u_1, intersection, dt, gammas, N_max, N_vals)
     # classify the intersection
-    n_in = length(roads_incoming)
-    n_out = length(roads_outgoing)
 
-    if n_in == 2 && n_out == 2
+    if intersection.n_incoming == 2 && intersection.n_outgoing == 2
         # two to two intersection
         #u_1 = two_to_two!(u_0, intersection, dt)
-        throw(ArgumentError("two to two intersection not implemented"))
-    elseif n_in == 1 && n_out == 1
+        @cuda two_to_two!(u_0, u_1, intersection.incoming[1].id, intersection.incoming[2].id, intersection.outgoing[1].id, intersection.outgoing[2].id, 
+        intersection.incoming[1].dx, intersection.incoming[2].dx, intersection.outgoing[1].dx, intersection.outgoing[2].dx, gammas, dt, N_max, N_vals,
+        intersection.P, intersection.alpha)
+    elseif intersection.n_incoming == 1 && intersection.n_outgoing == 1
         # one to one intersection
-        @cuda one_to_one!(u_0, u_1, roads_incoming[1].id, roads_outgoing[1].id, roads_incoming[1].dx, roads_outgoing[1].dx, gammas, dt, N_max, N_vals)
+        @cuda one_to_one!(u_0, u_1, intersection.incoming[1].id, intersection.outgoing[1].id, intersection.incoming[1].dx, intersection.outgoing[1].dx, gammas, dt, N_max, N_vals)
     elseif n_in == 1 && n_out == 2
         # one to two intersection
         # throw not implemented error
@@ -202,10 +202,6 @@ function one_to_one!(u_0, u_1, road_in_id, road_out_id, dx_i, dx_o, gammas, dt, 
 
     sigma = 0.5
     
-    D = f(gammas[road_out_id], in_rho)
-    
-
-    
     D = in_rho <= sigma ? f(gammas[road_in_id], in_rho) : f(gammas[road_in_id], sigma)
     S = out_rho <= sigma ? f(gammas[road_out_id], sigma) : f(gammas[road_out_id], in_rho)
     
@@ -217,4 +213,43 @@ function one_to_one!(u_0, u_1, road_in_id, road_out_id, dx_i, dx_o, gammas, dt, 
     return 
 end
 
+
+function two_to_two!(u_0, u_1, road_in_id1, road_in_id2, road_out_id1, road_out_id2, dx_i1, dx_i2, dx_o1, dx_o2, gammas, dt, N_max, N_vals, P, alpha)
+
+
+
+    j_in1 = (road_in_id1-1)*N_max + N_vals[road_in_id1]
+    j_in2 = (road_in_id2-1)*N_max + N_vals[road_in_id2]
+    j_out1 = (road_out_id1-1)*N_max + 1
+    j_out2 = (road_out_id2-1)*N_max + 1
+
+    in_rho1 = u_0[j_in1]
+    in_rho2 = u_0[j_in2]
+    out_rho1 = u_0[j_out1]
+    out_rho2 = u_0[j_out2]
+
+    sigma = 0.5
+
+    D1 = in_rho1 <= sigma ? f(gammas[road_in_id1], in_rho1) : f(gammas[road_in_id1], sigma)
+    D2 = in_rho2 <= sigma ? f(gammas[road_in_id2], in_rho2) : f(gammas[road_in_id2], sigma)
+    S1 = out_rho1 <= sigma ? f(gammas[road_out_id1], sigma) : f(gammas[road_out_id1], in_rho1)
+    S2 = out_rho2 <= sigma ? f(gammas[road_out_id2], sigma) : f(gammas[road_out_id2], in_rho2)
+
+    F11 = min(alpha[1]*D1, max(P[1]*S1, P[1]*S1 - alpha[3]*D2))
+    F21 = min(alpha[3]*D2, max((1-P[1])*S1, S1 - alpha[1]*D1))
+    Fr1 = F11 + F21
+    f_22upper = f(gammas[road_in_id2], sigma) - F11/f(gammas[road_in_id1], sigma) * (f(gammas[road_in_id2], sigma) - 0.f0001) # epsilon = 0.0001
+    F12 = min(alpha[2]*D1, max(P[2]*S2, S2 - alpha[2]*D2, S2 - f_22upper))
+    F22 = min(f_22upper, alpha[4]*D2, max((1-P[2])*S2, S2 - alpha[2]* D1))
+    Fr2 = F12 + F22
+    Fl1 = F11 + F12
+    Fl2 = F21 + F22
+
+
+    u_1[j_in1] = u_0[j_in1] - dt/dx_i1*(Fl1 - F(u_0[j_in1 - 1], u_0[j_in1], gammas[road_in_id1]))
+    u_1[j_in2] = u_0[j_in2] - dt/dx_i2*(Fl2 - F(u_0[j_in2 - 1], u_0[j_in2], gammas[road_in_id2]))
+    u_1[j_out1] = u_0[j_out1] - dt/dx_o1*(F(u_0[j_out1], u_0[j_out1 + 1], gammas[road_out_id1]) - Fr1)
+    u_1[j_out2] = u_0[j_out2] - dt/dx_o2*(F(u_0[j_out2], u_0[j_out2 + 1], gammas[road_out_id2]) - Fr2)
+    return
+end
 

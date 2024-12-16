@@ -1,18 +1,22 @@
-struct Road{RealType <: AbstractFloat}
-    id::Int
-    length::RealType
-    v_max::RealType
-    sigma::RealType
+using CUDA
+
+struct Road{RoadType <: AbstractFloat}
+    id::Int32
+    length::RoadType
+    v_max::RoadType
+    sigma::RoadType
     N::Int
-    dx::RealType
+    dx::RoadType
 end
 
-struct Intersection
+struct Intersection{Intersectiontype <: AbstractFloat}
     id::Int
     n_incoming::Int
     n_outgoing::Int
     incoming::Array{Road}
     outgoing::Array{Road}
+    alpha::CuArray{Intersectiontype}
+    P::CuArray{Intersectiontype}
 end
 
 struct TrafficProblem

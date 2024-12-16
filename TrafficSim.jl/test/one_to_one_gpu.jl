@@ -10,11 +10,12 @@ road_3 = TrafficSim.Road{Float32}(3, 100, 20, 0.5, N, 1/N)
 road_4 = TrafficSim.Road{Float32}(4, 100, 20, 0.5, N, 1/N)
 
 
-intersection = TrafficSim.Intersection(1, 1, 1, [road_1], [road_2])
-intersection2 = TrafficSim.Intersection(2, 1, 1, [road_2], [road_3])
-intersection3 = TrafficSim.Intersection(3, 1, 1, [road_3], [road_4])
+intersection = TrafficSim.Intersection{Float32}(1, 1, 1, [road_1], [road_2], [1.0], [1.0])
+#intersection2 = TrafficSim.Intersection(2, 1, 1, [road_2], [road_3])
+#intersection3 = TrafficSim.Intersection(3, 1, 1, [road_3], [road_4])
 
-trafficProblem = TrafficSim.TrafficProblem([road_1, road_2, road_3, road_4], [intersection, intersection2, intersection3])
+trafficProblem = TrafficSim.TrafficProblem([road_1, road_2], [intersection])
+#trafficProblem = TrafficSim.TrafficProblem([road_1, road_2, road_3, road_4], [intersection, intersection2, intersection3])
 
 x = range(0, 1, N)
 
@@ -36,7 +37,7 @@ rho  = TrafficSim.traffic_solve(trafficProblem, T, U_0)
 TrafficSim.plot_traffic(trafficProblem, rho, x)
 
 using CUDA
-CUDA.@profile rho  = TrafficSim.traffic_solve(trafficProblem, T, U_0)
+#CUDA.@profile rho  = TrafficSim.traffic_solve(trafficProblem, T, U_0)
 
 using DelimitedFiles
 
