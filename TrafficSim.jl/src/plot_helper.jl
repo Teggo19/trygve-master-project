@@ -62,7 +62,7 @@ function plot_traffic(trafficProblem::TrafficProblem, rho, x)
     colors = [:blue, :red, :green, :yellow, :purple, :orange, :black, :cyan]
     for i in 1:length(trafficProblem.roads)
         j = (i-1)*N + 1
-        lines!(ax, x .+ (i-1), rho[j:j+N-1], color = colors[i], label = "Road $i")
+        lines!(ax, x .+ (i-1), rho[i], color = colors[i], label = "Road $i")
     end
     axislegend(ax)
     fig

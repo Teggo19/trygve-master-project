@@ -31,8 +31,8 @@ function traffic_solve(trafficProblem::TrafficProblem, T, U_0)
     
 
 
-    N_vals = [road.N for road in trafficProblem.roads]
-    N_max = maximum(N_vals)
+    N_vals_cpu = [road.N for road in trafficProblem.roads]
+    N_max = maximum(N_vals_cpu)
     if N_max > 512
         throw(ArgumentError("N_max > 512 not supported"))
     end
@@ -48,12 +48,12 @@ function traffic_solve(trafficProblem::TrafficProblem, T, U_0)
 
     for i in 1:length(trafficProblem.roads)
         j = (i-1)*N_max + 1
-        rho[j:j+N_vals[i]-1] = U_0[i]
+        rho[j:j+N_vals_cpu[i]-1] = U_0[i]
     end
 
     rho_1 = similar(rho)
 
-    N_vals = CuArray(N_vals)
+    N_vals = CuArray(N_vals_cpu)
     gammas = CuArray(gammas_cpu)
     dxs = CuArray(dxs_cpu)
     
@@ -85,7 +85,9 @@ function traffic_solve(trafficProblem::TrafficProblem, T, U_0)
     
 
     rho_cpu = collect(rho)
-    return rho_cpu
+    final_rho = [rho_cpu[(i-1)*N_max+1:(i-1)*N_max+N_vals_cpu[i]] for i in 1:length(trafficProblem.roads)]
+
+    return final_rho
 end
 
 function road_solver!(u_0, u_1, N_vals, N_max, gammas, dt, dxs)
