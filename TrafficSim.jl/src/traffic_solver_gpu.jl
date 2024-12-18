@@ -42,7 +42,8 @@ function traffic_solve(trafficProblem::TrafficProblem, T, U_0)
 
     # make 2D array to store the density of the roads
     #rho = zeros(Float32, length(trafficProblem.roads)*N_max)
-    rho = CUDA.fill(1.0f0, length(trafficProblem.roads)*N_max)
+    # rho = CUDA.fill(1.0f0, length(trafficProblem.roads)*N_max)
+    rho = CuArray(ones(trafficProblem.velocityType, length(trafficProblem.roads)*N_max))
 
     for i in 1:length(trafficProblem.roads)
         j = (i-1)*N_max + 1
@@ -58,7 +59,7 @@ function traffic_solve(trafficProblem::TrafficProblem, T, U_0)
     t = 0
     while t < T
         dt = T-t
-        max_dt_arr = CUDA.fill(1.0f0, length(trafficProblem.roads)*N_max)
+        max_dt_arr = CuArray(ones(trafficProblem.velocityType, length(trafficProblem.roads)*N_max))
         @cuda threads=n_threads blocks=n_blocks_tot find_flux_prime!(rho, gammas, max_dt_arr, N_max, dxs)
         new_dt = CUDA.minimum(max_dt_arr)
         dt = min(dt, new_dt)

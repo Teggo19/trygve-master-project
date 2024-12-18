@@ -2,7 +2,7 @@ using CUDA
 
 struct Road{RealType, VelocityType}
     id::Int
-    length::Realtype
+    length::RealType
     v_max::VelocityType
     sigma::RealType
     N::Int
@@ -22,4 +22,7 @@ end
 struct TrafficProblem
     roads::Array{Road}
     intersections::Array{Intersection}
+    velocityType
 end
+
+TrafficProblem(roads, intersections) = TrafficProblem(roads, intersections, eltype(roads[1].v_max))

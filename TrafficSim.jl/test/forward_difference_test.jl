@@ -29,7 +29,7 @@ function total_flux(v)
     #v2 = ForwardDiff.value(v[2])
 
     road_1 = TrafficSim.Road{Float32, eltype(v)}(1, 100.f0, v[1], 0.f5, N, dx)
-    road_2 = TrafficSim.Road{eltype(v)}(2, 100.f0, v[2], 0.f5, N, dx)
+    road_2 = TrafficSim.Road{Float32, eltype(v)}(2, 100.f0, v[2], 0.f5, N, dx)
     intersection = TrafficSim.Intersection{Float32}(1, 1, 1, [road_1], [road_2], [1.0], [1.0])
     trafficProblem = TrafficSim.TrafficProblem([road_1, road_2], [intersection])
     U_0 = [U_01, zeros(N)]
@@ -40,4 +40,4 @@ end
 
 total_flux([400.f0, 200.f0])
 
-ForwardDiff.gradient(total_flux, [10.f0, 80.f0])
+ForwardDiff.gradient(total_flux, [15.f0, 10.f0])
