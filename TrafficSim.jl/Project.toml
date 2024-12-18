@@ -1,0 +1,4 @@
+name = "TrafficSim"
+uuid = "00579842-89a0-4d16-a1d0-93c8c727c484"
+authors = ["Trygve Tegnander <trygveteg@gmail.com>"]
+version = "0.1.0"
