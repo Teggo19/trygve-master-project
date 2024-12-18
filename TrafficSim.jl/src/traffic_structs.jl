@@ -1,15 +1,15 @@
 using CUDA
 
-struct Road{RoadType <: AbstractFloat}
-    id::Int32
-    length::RoadType
-    v_max::RoadType
-    sigma::RoadType
+struct Road{RealType, VelocityType}
+    id::Int
+    length::Realtype
+    v_max::VelocityType
+    sigma::RealType
     N::Int
-    dx::RoadType
+    dx::RealType
 end
 
-struct Intersection{Intersectiontype <: AbstractFloat}
+struct Intersection{Intersectiontype}
     id::Int
     n_incoming::Int
     n_outgoing::Int

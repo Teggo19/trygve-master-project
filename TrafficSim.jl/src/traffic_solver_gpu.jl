@@ -29,8 +29,6 @@ end
 
 function traffic_solve(trafficProblem::TrafficProblem, T, U_0)
     
-
-
     N_vals_cpu = [road.N for road in trafficProblem.roads]
     N_max = maximum(N_vals_cpu)
     if N_max > 512
@@ -62,28 +60,20 @@ function traffic_solve(trafficProblem::TrafficProblem, T, U_0)
         dt = T-t
         max_dt_arr = CUDA.fill(1.0f0, length(trafficProblem.roads)*N_max)
         @cuda threads=n_threads blocks=n_blocks_tot find_flux_prime!(rho, gammas, max_dt_arr, N_max, dxs)
-        dt = CUDA.minimum(max_dt_arr)
+        new_dt = CUDA.minimum(max_dt_arr)
+        dt = min(dt, new_dt)
         t += dt
-
-        # solve the traffic problem on the roads independently
         
         #solve the roads
         @cuda threads=n_threads blocks=n_blocks_tot road_solver!(rho, rho_1, N_vals, N_max, gammas, dt, dxs)
-        
-        #CUDA.@sync
-        
 
         # solve the intersections
         for intersection in trafficProblem.intersections
             # solve the intersection
             intersection_solver!(rho, rho_1, intersection, dt, gammas, N_max, N_vals)
         end
-        #CUDA.@sync
         rho, rho_1 = rho_1, rho
-
     end
-    
-
     rho_cpu = collect(rho)
     final_rho = [rho_cpu[(i-1)*N_max+1:(i-1)*N_max+N_vals_cpu[i]] for i in 1:length(trafficProblem.roads)]
 
