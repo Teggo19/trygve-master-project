@@ -71,9 +71,9 @@ function traffic_solve_ka(trafficProblem::TrafficProblem, T, U_0, device_string,
         if device_string == "gpu"
             max_dt_arr = CuArray(max_dt_arr)
         end
-        #kernel! = find_flux_prime_kernel!(backend, 256)
-        #kernel!(backend, 256)(rho, gammas, max_dt_arr, N_max, dxs, ndrange = N_tot )
-        find_flux_prime_kernel!(backend, 256)(rho, gammas, max_dt_arr, N_max, dxs, ndrange = N_tot)
+        kernel! = find_flux_prime_kernel!(backend, 256)
+        kernel!(backend, 256)(rho, gammas, max_dt_arr, N_max, dxs, ndrange = N_tot )
+        #find_flux_prime_kernel!(backend, 256)(rho, gammas, max_dt_arr, N_max, dxs, ndrange = N_tot)
         KernelAbstractions.synchronize(backend)
 
         if device_string == "gpu"
