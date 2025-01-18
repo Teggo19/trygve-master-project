@@ -57,20 +57,18 @@ function traffic_solve_ka(trafficProblem::TrafficProblem, T, U_0, device_string,
 
     rho_1 = similar(rho)
 
-        
+    max_dt_arr = ones(trafficProblem.velocityType, length(trafficProblem.roads)*N_max)
+    
+    if device_string == "gpu"
+        max_dt_arr = CuArray(max_dt_arr)
+    end
     
     n_time_steps = 0
        
     t = 0
     while t < T
         dt = T-t
-        max_dt_arr = ones(trafficProblem.velocityType, length(trafficProblem.roads)*N_max)
-        # max_dt_arr = CuArray(ones(trafficProblem.velocityType, length(trafficProblem.roads)*N_max))
-        # @cuda threads=n_threads blocks=n_blocks_tot find_flux_prime!(rho, gammas, max_dt_arr, N_max, dxs)
-        # new_dt = CUDA.minimum(max_dt_arr)
-        if device_string == "gpu"
-            max_dt_arr = CuArray(max_dt_arr)
-        end
+
         kernel! = find_flux_prime_kernel!(backend, 256)
         kernel!(rho, gammas, max_dt_arr, N_max, dxs, ndrange = N_tot )
         #find_flux_prime_kernel!(backend, 256)(rho, gammas, max_dt_arr, N_max, dxs, ndrange = N_tot)
@@ -90,10 +88,11 @@ function traffic_solve_ka(trafficProblem::TrafficProblem, T, U_0, device_string,
       
 
         dt = min(dt, new_dt)
-        
+        """
         if device_string == "cpu"
             println("t = $t, dt = $dt, n_time_steps = $n_time_steps")
         end
+        """
         t += dt
         
         #solve the roads 
@@ -110,6 +109,16 @@ function traffic_solve_ka(trafficProblem::TrafficProblem, T, U_0, device_string,
         rho, rho_1 = rho_1, rho
 
         n_time_steps += 1
+
+        if maximum(rho) > 1.0
+            println("rho > 1")
+            println("t = $t, dt = $dt, n_time_steps = $n_time_steps, rho = $rho")
+            break
+        elseif minimum(rho) < 0.0
+            println("rho < 0")
+            println("t = $t, dt = $dt, n_time_steps = $n_time_steps, rho = $rho")
+            break
+        end
     end
     if device_string == "gpu"
         rho_cpu = collect(rho)
@@ -131,7 +140,7 @@ end
     i = @index(Global)
     gamma = gammas[ceil(Int, i/N_max)]
     dx = dxs[ceil(Int, i/N_max)]
-    @inbounds max_dt_arr[i] = dx/abs(J(gamma, rho[i]))
+    max_dt_arr[i] = dx/abs(J(gamma, rho[i]))
     # J(gamma, rho[i])
     
 end
@@ -141,7 +150,7 @@ end
     # i = threadIdx().x + (blockIdx().x - 1)*N_max
     i = @index(Global)
 
-    if i >= length(u_0)
+    if i <= length(u_0)
 
         road_index = ceil(Int, i/N_max)
 
@@ -203,6 +212,7 @@ end
             
         end
     end
+    
     
 end
 

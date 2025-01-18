@@ -1,5 +1,6 @@
 include("../src/TrafficSim.jl")
 using .TrafficSim
+using Plots
 
 function test_method(T, N, device_string)
     road_1 = TrafficSim.Road{Float64, Float32}(1, 100., 20.f0, 0.5, N, 1/N)
@@ -26,6 +27,7 @@ function test_method(T, N, device_string)
 
 
     U_0 = [U_01, U_01, zeros(N), zeros(N)]
+
     rho, n_time_steps = TrafficSim.traffic_solve_ka(trafficProblem, T, U_0, device_string, true)
 
     result, time, allocs, mem = @timed TrafficSim.traffic_solve_ka(trafficProblem, T, U_0, device_string, true)
@@ -34,7 +36,7 @@ end
 
 T = 4
 
-M = 5
+M = 4
 
 N_vals = [10^i for i in 1:M]
 
@@ -47,14 +49,14 @@ for i in 1:M
     rho, time, n_time_steps = test_method(T, N, device_string)
     gpu_times[i] = time
     gpu_n_time_steps[i] = time/n_time_steps
-    println("gpu: N = $N, time = $time, n_time_steps = $n_time_steps")
+    println("gpu: N = $N, time = $(gpu_times[i]), n_time_steps = $n_time_steps")
 end
 
 device_string = "cpu"
 cpu_times = zeros(length(N_vals))
 cpu_n_time_steps = zeros(length(N_vals))
 
-for i in 1:1
+for i in 1:M
     N = N_vals[i]
     rho, time, n_time_steps = test_method(T, N, device_string)
     cpu_times[i] = time
@@ -62,12 +64,14 @@ for i in 1:1
     println("cpu: N = $N, time = $time, n_time_steps = $n_time_steps")
 end
 
-using Plots
-plot(N_vals, gpu_times, label="GPU", xaxis=:log, yaxis=:log)
-plot!(N_vals, cpu_times, label="CPU", xaxis=:log, yaxis=:log)
+python_vals = [0.06630373001098633, 0.1772904396057129, 1.32804274559021, 24.16429328918457]
+
+p_1 = plot(N_vals, gpu_times, label="GPU", xaxis=:log, yaxis=:log, title="GPU vs CPU total time")
+plot!(p_1, N_vals, cpu_times, label="CPU", xaxis=:log, yaxis=:log)
+plot!(p_1, N_vals, python_vals, label="Python", xaxis=:log, yaxis=:log)
 # add legends to the above plot
-plot(N_vals, gpu_n_time_steps, label="GPU", xaxis=:log, yaxis=:log)
-plot!(N_vals, cpu_n_time_steps, label="CPU", xaxis=:log, yaxis=:log)
+p_2 = plot(N_vals, gpu_n_time_steps, label="GPU", xaxis=:log, yaxis=:log, title="GPU vs CPU time per time step")
+plot!(p_2, N_vals, cpu_n_time_steps, label="CPU", xaxis=:log, yaxis=:log)
 # add legends to the above plot
 
 
