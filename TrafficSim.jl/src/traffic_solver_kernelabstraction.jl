@@ -25,16 +25,12 @@ function traffic_solve_ka(trafficProblem::TrafficProblem, T, U_0, device_string,
     N_max = maximum(N_vals_cpu)
 
     N_tot = sum(N_vals_cpu)
-    #n_threads = N_max
-    #n_blocks_tot = length(trafficProblem.roads)
 
     gammas_cpu = [road.v_max/road.length for road in trafficProblem.roads]
     dxs_cpu = [road.dx for road in trafficProblem.roads]
 
     # make 2D array to store the density of the roads
-    #rho = zeros(Float32, length(trafficProblem.roads)*N_max)
-    # rho = CUDA.fill(1.0f0, length(trafficProblem.roads)*N_max)
-    #CUDA rho = CuArray(ones(trafficProblem.velocityType, length(trafficProblem.roads)*N_max))
+
     rho_cpu = ones(trafficProblem.velocityType, length(trafficProblem.roads)*N_max)
 
     if device_string == "gpu"
@@ -62,6 +58,13 @@ function traffic_solve_ka(trafficProblem::TrafficProblem, T, U_0, device_string,
     if device_string == "gpu"
         max_dt_arr = CuArray(max_dt_arr)
     end
+
+    incoming_fluxes = ones(trafficProblem.velocityType, length(trafficProblem.roads))
+    if device_string == "gpu"
+        incoming_fluxes_backend = CuArray(incoming_fluxes)
+    else
+        incoming_fluxes_backend = copy(incoming_fluxes)
+    end
     
     n_time_steps = 0
        
@@ -69,7 +72,7 @@ function traffic_solve_ka(trafficProblem::TrafficProblem, T, U_0, device_string,
     while t < T
         dt = T-t
 
-        kernel! = find_flux_prime_kernel!(backend, 256)
+        kernel! = find_max_dt_kernel!(backend, 256)
         kernel!(rho, gammas, max_dt_arr, N_max, dxs, ndrange = N_tot )
         #find_flux_prime_kernel!(backend, 256)(rho, gammas, max_dt_arr, N_max, dxs, ndrange = N_tot)
         KernelAbstractions.synchronize(backend)
@@ -79,26 +82,22 @@ function traffic_solve_ka(trafficProblem::TrafficProblem, T, U_0, device_string,
         else
             new_dt = minimum(max_dt_arr)
         end
-        
-        # find_flux_prime_kernel = find_flux_prime!(backend)
-        
-        #event = find_flux_prime!(rho, gammas, max_dt_arr, N_max, dxs)
-        # wait(event)
-
-      
-
         dt = min(dt, new_dt)
-        """
-        if device_string == "cpu"
-            println("t = $t, dt = $dt, n_time_steps = $n_time_steps")
-        end
-        """
         t += dt
         
+        for i in 1:length(trafficProblem.roads)
+            incoming_fluxes[i] = trafficProblem.roads[i].incoming_flux(t)
+        end
+        if device_string == "gpu"
+            incoming_fluxes_backend = CuArray(incoming_fluxes)
+        else
+            incoming_fluxes_backend = copy(incoming_fluxes)
+        end
+
+
         #solve the roads 
-        # @cuda threads=n_threads blocks=n_blocks_tot road_solver!(rho, rho_1, N_vals, N_max, gammas, dt, dxs)
         kernel! = road_solver_kernel!(backend, 256)
-        kernel!(rho, rho_1, N_vals, N_max, gammas, dt, dxs, ndrange = N_tot)
+        kernel!(rho, rho_1, N_vals, N_max, gammas, dt, dxs, incoming_fluxes_backend, ndrange = N_tot)
         KernelAbstractions.synchronize(backend)
         # solve the intersections
         for intersection in trafficProblem.intersections
@@ -112,11 +111,11 @@ function traffic_solve_ka(trafficProblem::TrafficProblem, T, U_0, device_string,
 
         if maximum(rho) > 1.0
             println("rho > 1")
-            println("t = $t, dt = $dt, n_time_steps = $n_time_steps, rho = $rho")
+            println("t = $t, dt = $dt, n_time_steps = $n_time_steps")#, rho = $rho")
             break
         elseif minimum(rho) < 0.0
             println("rho < 0")
-            println("t = $t, dt = $dt, n_time_steps = $n_time_steps, rho = $rho")
+            println("t = $t, dt = $dt, n_time_steps = $n_time_steps")#, rho = $rho")
             break
         end
     end
@@ -135,7 +134,7 @@ function traffic_solve_ka(trafficProblem::TrafficProblem, T, U_0, device_string,
 end
 
 
-@kernel function find_flux_prime_kernel!(rho, gammas, max_dt_arr, N_max, dxs)
+@kernel function find_max_dt_kernel!(rho, gammas, max_dt_arr, N_max, dxs)
     # i = threadIdx().x + (blockIdx().x - 1)*N_max
     i = @index(Global)
     gamma = gammas[ceil(Int, i/N_max)]
@@ -145,9 +144,9 @@ end
     
 end
 
-@kernel function road_solver_kernel!(u_0, u_1, N_vals, N_max, gammas, dt, dxs)
+
+@kernel function road_solver_kernel!(u_0, u_1, N_vals, N_max, gammas, dt, dxs, incoming_fluxes)
     # get the index of the block
-    # i = threadIdx().x + (blockIdx().x - 1)*N_max
     i = @index(Global)
 
     if i <= length(u_0)
@@ -155,64 +154,66 @@ end
         road_index = ceil(Int, i/N_max)
 
         j = (i-1) % N_max + 1
+        incoming_flux = incoming_fluxes[road_index]
+        sigma = 0.5f0
 
         gamma = gammas[road_index]
         dx = dxs[road_index]
 
-        update = 0.0f0
 
         if j > N_vals[road_index]
             u_1[i] = u_0[i]
             
 
         elseif j == 2
-            u_1[i] = u_0[i] - 0.5f0 * dt / dx * (F(u_0[i], u_0[i+1], gamma) - F(u_0[i-1], u_0[i], gamma)
-            + F(u_0[i] - dt/dx*(F(u_0[i], u_0[i+1], gamma) - F(u_0[i-1], u_0[i], gamma)), 
-            u_0[i+1] - dt/dx*(F(u_0[i+1], u_0[i+2], gamma) - F(u_0[i], u_0[i+1], gamma)), gamma)
-
-            - F(u_0[i-1] - dt/dx*(F(u_0[i-1], u_0[i], gamma) - F(u_0[i-1], u_0[i-1], gamma)), 
-            u_0[i] - dt/dx*(F(u_0[i], u_0[i+1], gamma) - F(u_0[i-1], u_0[i], gamma)), gamma))
+            r__2 = u_0[i-1]
+            r__1 = u_0[i-1]
+            r_0 = u_0[i]
+            r_1 = u_0[i+1]
+            r_2 = u_0[i+2]
         
         elseif j == 1
-            # Should do a check her to see if there is an intersection
-            u_1[i] = u_0[i] - 0.5f0 * dt / dx * (F(u_0[i], u_0[i+1], gamma) - F(u_0[i], u_0[i], gamma)
-                        + F(u_0[i] - dt/dx*(F(u_0[i], u_0[i+1], gamma) - F(u_0[i], u_0[i], gamma)), 
-                        u_0[i+1] - dt/dx*(F(u_0[i+1], u_0[i+2], gamma) - F(u_0[i], u_0[i+1], gamma)), gamma)
 
-                        - F(u_0[i] - dt/dx*(F(u_0[i], u_0[i], gamma) - F(u_0[i], u_0[i], gamma)), 
-                        u_0[i] - dt/dx*(F(u_0[i], u_0[i+1], gamma) - F(u_0[i], u_0[i], gamma)), gamma))
+
+            D = incoming_flux <= sigma ? f(gammas[road_index], incoming_flux) : f(gammas[road_index], sigma)
+            S = u_0[i] <= sigma ? f(gammas[road_index], sigma) : f(gammas[road_index], u_0[i])
+    
+            f_intersection = min(D, S)
+
+            u_1[i] = u_0[i] - 0.5f0 * dt / dx * (numerical_flux(u_0[i], u_0[i], u_0[i+1], u_0[i+2], gamma, dt, dx)
+                        - f_intersection )
         
         elseif j == N_vals[road_index] - 1
-            u_1[i] = u_0[i] -0.5f0 * dt / dx * (F(u_0[i], u_0[i+1], gamma) - F(u_0[i-1], u_0[i], gamma)
-                    + F(u_0[i] - dt/dx*(F(u_0[i], u_0[i+1], gamma) - F(u_0[i-1], u_0[i], gamma)), 
-                    u_0[i+1] - dt/dx*(F(u_0[i+1], u_0[i+1], gamma) - F(u_0[i], u_0[i+1], gamma)), gamma)
-
-                    - F(u_0[i-1] - dt/dx*(F(u_0[i-1], u_0[i], gamma) - F(u_0[i-2], u_0[i-1], gamma)), 
-                    u_0[i] - dt/dx*(F(u_0[i], u_0[i+1], gamma) - F(u_0[i-1], u_0[i], gamma)), gamma))
+            r__2 = u_0[i-2]
+            r__1 = u_0[i-1]
+            r_0 = u_0[i]
+            r_1 = u_0[i+1]
+            r_2 = u_0[i+1]
         
         elseif j == N_vals[road_index]
             # Should do a check her to see if there is an intersection
-            u_1[i] = u_0[i] -0.5f0 * dt / dx * (F(u_0[i], u_0[i], gamma) - F(u_0[i-1], u_0[i], gamma)
-                    + F(u_0[i] - dt/dx*(F(u_0[i], u_0[i], gamma) - F(u_0[i-1], u_0[i], gamma)), 
-                    u_0[i] - dt/dx*(F(u_0[i], u_0[i], gamma) - F(u_0[i], u_0[i], gamma)), gamma)
-
-                    - F(u_0[i-1] - dt/dx*(F(u_0[i-1], u_0[i], gamma) - F(u_0[i-2], u_0[i-1], gamma)), 
-                    u_0[i] - dt/dx*(F(u_0[i], u_0[i], gamma) - F(u_0[i-1], u_0[i], gamma)), gamma))
+            r__2 = u_0[i-2]
+            r__1 = u_0[i-1]
+            r_0 = u_0[i]
+            r_1 = u_0[i]
+            r_2 = u_0[i]
         
         else 
-            #update_rho!(update, u_0[i-2], u_0[i-1], u_0[i], u_0[i+1], u_0[i+2], dt, dx, gamma) 
-            #u_1[i] = u_0[i] - update
-            
-            u_1[i] = u_0[i] -0.5f0 * dt / dx * (F(u_0[i], u_0[i+1], gamma) - F(u_0[i-1], u_0[i], gamma)
-                        + F(u_0[i] - dt/dx*(F(u_0[i], u_0[i+1], gamma) - F(u_0[i-1], u_0[i], gamma)), 
-                        u_0[i+1] - dt/dx*(F(u_0[i+1], u_0[i+2], gamma) - F(u_0[i], u_0[i+1], gamma)), gamma)
-
-                        - F(u_0[i-1] - dt/dx*(F(u_0[i-1], u_0[i], gamma) - F(u_0[i-2], u_0[i-1], gamma)), 
-                        u_0[i] - dt/dx*(F(u_0[i], u_0[i+1], gamma) - F(u_0[i-1], u_0[i], gamma)), gamma))
-            
+            r__2 = u_0[i-2]
+            r__1 = u_0[i-1]
+            r_0 = u_0[i]
+            r_1 = u_0[i+1]
+            r_2 = u_0[i+2]
+        end
+        if j != 1
+            u_1[i] = u_0[i] -0.5f0 * dt / dx * (numerical_flux(r__1, r_0, r_1, r_2, gamma, dt, dx) - numerical_flux(r__2, r__1, r_0, r_1, gamma, dt, dx))
         end
     end
-    
+end
+
+function numerical_flux(u_0, u_1, u_2, u_3, gamma, dt, dx)
+
+    return F(u_1, u_2, gamma) + F(u_1 - dt/dx*(F(u_1, u_2, gamma) - F(u_0, u_1, gamma)), u_2 - dt/dx*(F(u_2, u_3, gamma) - F(u_1, u_2, gamma)), gamma)
     
 end
 
@@ -276,12 +277,14 @@ end
     sigma = 0.5
     
     D = in_rho <= sigma ? f(gammas[road_in_id], in_rho) : f(gammas[road_in_id], sigma)
-    S = out_rho <= sigma ? f(gammas[road_out_id], sigma) : f(gammas[road_out_id], in_rho)
+    S = out_rho <= sigma ? f(gammas[road_out_id], sigma) : f(gammas[road_out_id], out_rho)
     
     f_intersection = min(D, S)
     
-    u_1[j_out] = u_0[j_out] - dt/dx_o*(F(u_0[j_out], u_0[j_out + 1], gammas[road_out_id]) - f_intersection)
-    u_1[j_in] = u_0[j_in] - dt/dx_i*(f_intersection - F(u_0[j_in - 1], u_0[j_in], gammas[road_in_id]))
+    # u_1[j_out] = u_0[j_out] - dt/dx_o*(F(u_0[j_out], u_0[j_out + 1], gammas[road_out_id]) - f_intersection)
+    u_1[j_out] = u_0[j_out] - dt/dx_o*(numerical_flux(u_0[j_out-2], u_0[j_out-1], u_0[j_out], u_0[j_out], gammas[road_out_id], dt, dx) - f_intersection)
+    # u_1[j_in] = u_0[j_in] - dt/dx_i*(f_intersection - F(u_0[j_in - 1], u_0[j_in], gammas[road_in_id]))
+    u_1[j_in] = u_0[j_in] - dt/dx_i*(f_intersection - numerical_flux(u_0[j_in], u_0[j_in], u_0[j_in+1], u_0[j_in+2], gammas[road_in_id], dt, dx))
     
     
 end
@@ -311,7 +314,7 @@ end
     F11 = min(alpha[1]*D1, max(P[1]*S1, P[1]*S1 - alpha[3]*D2))
     F21 = min(alpha[3]*D2, max((1-P[1])*S1, S1 - alpha[1]*D1))
     Fr1 = F11 + F21
-    f_22upper = f(gammas[road_in_id2], sigma) - F11/f(gammas[road_in_id1], sigma) * (f(gammas[road_in_id2], sigma) - 0.f0001) # epsilon = 0.0001
+    f_22upper = f(gammas[road_in_id2], sigma) - F11/f(gammas[road_in_id1], sigma) * (f(gammas[road_in_id2], sigma) - 0.2f0) # epsilon = 0.0001
     F12 = min(alpha[2]*D1, max(P[2]*S2, S2 - alpha[2]*D2, S2 - f_22upper))
     F22 = min(f_22upper, alpha[4]*D2, max((1-P[2])*S2, S2 - alpha[2]* D1))
     Fr2 = F12 + F22
