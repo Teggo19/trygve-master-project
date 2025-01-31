@@ -7,6 +7,9 @@ include("traffic_solver_gpu.jl")
 function make_traffic_visualization(trafficProblem, coordinates, dt, T, U_0)
     """
     Create a visualization of the traffic problem
+
+    coordinates: a 3D array where the first index is the road number, the second index is the start and end coordinates of the road, 
+    and the third index is the x and y coordinates of the start and end of the road
     """
     # Calculate all the necessary values
     M = ceil(Int, T/dt)
@@ -20,13 +23,14 @@ function make_traffic_visualization(trafficProblem, coordinates, dt, T, U_0)
     end
     t = 0
     j = 2
-    while t < T
+    while t < T-1e-6
         if t + dt > T
             dt = T - t
         end
         t += dt
-        U_1 = traffic_solve(trafficProblem, dt, U_0)
+        U_1 = traffic_solve_ka(trafficProblem, dt, U_0, "gpu", false)
         for i in 1:n_roads
+            
             U[j, i, 1:N_vals[i]] = U_1[i]
         end
         U_0 = U_1
@@ -57,10 +61,10 @@ function make_traffic_visualization(trafficProblem, coordinates, dt, T, U_0)
     # Make the lines have as many segments as the road has cells N_vals[i]
     segments = []
     for i in 1:n_roads
-        x1 = coordinates[i][1][1]
-        y1 = coordinates[i][1][2]
-        x2 = coordinates[i][2][1]
-        y2 = coordinates[i][2][2]
+        x1 = coordinates[i,1,1]
+        y1 = coordinates[i,1,2]
+        x2 = coordinates[i,2,1]
+        y2 = coordinates[i,2,2]
         dx = (x2 - x1) / N_vals[i]
         dy = (y2 - y1) / N_vals[i]
         x = zeros(Float32, N_vals[i]+1)
@@ -76,24 +80,42 @@ function make_traffic_visualization(trafficProblem, coordinates, dt, T, U_0)
         #y = [(y1 +(j+0.5)*dy) for j in 1:(N_vals[i]-1)]
         
         # Adding background lines to see the road
-        lines!(ax, [Point2f(x1, y1), Point2f(x2, y2)], color = :black, linewidth = 5)
+        
+        #lines!(ax, [Point2f(x1, y1), Point2f(x2, y2)], color = :black, linewidth = 5)
 
         density = U[1, i, 1:N_vals[i]]
-        colors = [RGBA(d, 0, 0, 1) for d in density]
+        colors = [RGBA(d, 1-d, 0, 1) for d in density]
         for j in 1:N_vals[i]
             push!(segments, linesegments!(ax, [Point2f(x[j], y[j]), Point2f(x[j+1], y[j+1])], color = colors[j], linewidth = 10))
         end
     end
 
     on(sl_t.value) do t_val
+        show_visuals(t_val)
+    end
+
+    function show_visuals(t_val)
         j = Int(round(t_val / dt)) + 1
         for i in 1:n_roads
             density = U[j, i, 1:N_vals[i]]
-            colors = [RGBA(d, 0.0, 0, 1) for d in density]
+            colors = [RGBA(d, 1-d, 0, 1) for d in density]
             for k in 1:N_vals[i]
                 segments[(i-1)*N_vals[i] + k].color = colors[k]
             end
         end
+    end
+
+    # add button that plays the simulation from the start
+    button = Button(fig, label="Play")
+    simulation_speed = T/10
+    on(button.clicks) do n
+        sl_t.value = 0
+        @async for i in 1:M
+            sleep(dt/simulation_speed)
+            show_visuals(i*dt)
+            set_close_to!(sl_t, i*dt)
+        end
+        
     end
 
     fig
