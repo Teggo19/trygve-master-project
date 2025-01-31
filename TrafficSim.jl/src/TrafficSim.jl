@@ -7,4 +7,5 @@ module TrafficSim
     include("traffic_solver_gpu.jl")
     include("traffic_visualization.jl")
     include("traffic_solver_kernelabstraction.jl")
+    include("generate_test_case.jl")
 end
