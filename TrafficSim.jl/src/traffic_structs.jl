@@ -7,6 +7,7 @@ struct Road{RealType, VelocityType}
     sigma::RealType
     N::Int
     dx::RealType
+    incoming_flux::Function
 end
 
 struct Intersection{Intersectiontype}
