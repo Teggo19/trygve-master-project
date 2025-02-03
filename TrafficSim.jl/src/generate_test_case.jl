@@ -1,4 +1,5 @@
 include("traffic_structs.jl")
+using Interpolations
 
 function main_incoming_flux(t)
     # random number between 0.5 and 0.7
@@ -78,7 +79,30 @@ function make_test_trafficProblem(M, N)
 
     trafficProblem = TrafficSim.TrafficProblem(roads, intersections)
     #trafficProblem = TrafficSim.TrafficProblem(roads, [])
-    return trafficProblem
+
+    rho_read = [[0.0f0 for i in 1:100] for j in 1:24]
+    open("src/test_case_M=3_N=1000.txt") do io
+        i = 1
+        for line in eachline(io)
+            rho_read[i] = eval(Meta.parse(line))
+            i += 1
+        end
+    end
+    x_1000 = range(0, 1, 100)
+    
+    interpolations = [linear_interpolation(x_1000 , rho_read[i]) for i in 1:24]
+
+    x = range(0, 1, N)
+    U_0 = [zeros(Float32, N) for i in 1:M*(M+1)*2]
+    for i in 1:M*(M+1)*2
+        if i <= M*(M+1)
+            U_0[i] = [interpolations[(i-1)%12+1](x) for x in x]
+        else
+            U_0[i] = [interpolations[(i-1)%12+12+1](x) for x in x]
+        end
+    end
+
+    return trafficProblem, U_0
 end
 
 
