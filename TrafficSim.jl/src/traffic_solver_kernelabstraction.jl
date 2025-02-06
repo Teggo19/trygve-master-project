@@ -16,10 +16,36 @@ end
     return 0.5*(f(gamma, u_1) + f(gamma, u_2)) - 0.5*(max(abs(J(gamma, u_1)), abs(J(gamma, u_2)))*(u_2 - u_1))
 end
 
+function minmod(a, b)
+    if a*b > 0
+        if a > 0
+            return min(a, b)
+        else
+            return max(a, b)
+        end
+    else
+        return 0.f0*a
+    end
+end
+
+function L_update(u_2, u_1, u, u1, u2, dx, dt, gamma)
+    
+    slope1 = minmod((u_1- u_2), (u-u_1))
+    slope2 = minmod((u1 - u), (u - u_1))
+    slope3 = minmod((u2 - u1), (u1 - u))
+    
+    
+    u_ = u - dt/dx*(F(u + slope2*0.5, u1 - slope3*0.5, gamma)  - F(u_1 + slope1*0.5, u - slope2*0.5, gamma))
+    
+    return u_
+end
 
 
 
-function traffic_solve_ka(trafficProblem::TrafficProblem, T, U_0, device_string, get_n_time_steps)
+traffic_solve_ka(trafficProblem::TrafficProblem, T, U_0, device_string) = traffic_solve_ka(trafficProblem, T, U_0, device_string, false)
+# traffic_solve_ka(trafficProblem::TrafficProblem, T, U_0, device_string, bool_benchmark) = traffic_solve_ka(trafficProblem, T, U_0, device_string, bool_benchmark)
+function traffic_solve_ka(trafficProblem::TrafficProblem, T, U_0, device_string, bool_benchmark)
+    get_n_time_steps = bool_benchmark
 
     N_vals_cpu = [road.N for road in trafficProblem.roads]
     N_max = maximum(N_vals_cpu)
@@ -52,8 +78,9 @@ function traffic_solve_ka(trafficProblem::TrafficProblem, T, U_0, device_string,
     backend = get_backend(rho)
 
     rho_1 = similar(rho)
+    rho_2 = similar(rho)
 
-    max_dt_arr = ones(trafficProblem.velocityType, length(trafficProblem.roads)*N_max)
+    max_dt_arr = ones(trafficProblem.velocityType, length(trafficProblem.roads)*(N_max+2))
     
     if device_string == "gpu"
         max_dt_arr = CuArray(max_dt_arr)
@@ -67,13 +94,22 @@ function traffic_solve_ka(trafficProblem::TrafficProblem, T, U_0, device_string,
     end
     
     n_time_steps = 0
-       
+    if bool_benchmark
+        t1 = time()
+    end
     t = 0
     while t < T
+        for i in 1:length(trafficProblem.roads)
+            incoming_fluxes[i] = trafficProblem.roads[i].incoming_flux(t)
+        end
+        if device_string == "gpu"
+            incoming_fluxes_backend = CuArray(incoming_fluxes)
+        else
+            incoming_fluxes_backend = copy(incoming_fluxes)
+        end
         dt = T-t
-
-        kernel! = find_max_dt_kernel!(backend, 256)
-        kernel!(rho, gammas, max_dt_arr, N_max, dxs, ndrange = N_tot )
+        kernel! = find_max_dt_kernel!(backend, 512)
+        kernel!(rho, gammas, max_dt_arr, N_max, dxs, incoming_fluxes_backend, ndrange = length(trafficProblem.roads)*(N_max+1) )
         #find_flux_prime_kernel!(backend, 256)(rho, gammas, max_dt_arr, N_max, dxs, ndrange = N_tot)
         KernelAbstractions.synchronize(backend)
 
@@ -85,20 +121,23 @@ function traffic_solve_ka(trafficProblem::TrafficProblem, T, U_0, device_string,
         dt = min(dt, new_dt)
         t += dt
         
-        for i in 1:length(trafficProblem.roads)
-            incoming_fluxes[i] = trafficProblem.roads[i].incoming_flux(t)
-        end
-        if device_string == "gpu"
-            incoming_fluxes_backend = CuArray(incoming_fluxes)
-        else
-            incoming_fluxes_backend = copy(incoming_fluxes)
-        end
+        
+        
 
 
         #solve the roads 
-        kernel! = road_solver_kernel!(backend, 256)
+
+        kernel! = road_solver_kernel!(backend, 512)
+        
         kernel!(rho, rho_1, N_vals, N_max, gammas, dt, dxs, incoming_fluxes_backend, ndrange = N_tot)
         KernelAbstractions.synchronize(backend)
+        kernel!(rho_1, rho_2, N_vals, N_max, gammas, dt, dxs, incoming_fluxes_backend, ndrange = N_tot)
+        KernelAbstractions.synchronize(backend)
+        kernel! = avg_kernel!(backend, 512)
+        kernel!(rho, rho_2, rho_1, ndrange = N_tot)
+        KernelAbstractions.synchronize(backend)
+        
+
         # solve the intersections
         for intersection in trafficProblem.intersections
             # solve the intersection
@@ -119,6 +158,10 @@ function traffic_solve_ka(trafficProblem::TrafficProblem, T, U_0, device_string,
             break
         end
     end
+    if bool_benchmark
+        t2 = time()
+        return (t2-t1), n_time_steps
+    end
     if device_string == "gpu"
         rho_cpu = collect(rho)
     else
@@ -134,12 +177,24 @@ function traffic_solve_ka(trafficProblem::TrafficProblem, T, U_0, device_string,
 end
 
 
-@kernel function find_max_dt_kernel!(rho, gammas, max_dt_arr, N_max, dxs)
+@kernel function find_max_dt_kernel!(rho, gammas, max_dt_arr, N_max, dxs, incoming_fluxes)
     # i = threadIdx().x + (blockIdx().x - 1)*N_max
     i = @index(Global)
-    gamma = gammas[ceil(Int, i/N_max)]
-    dx = dxs[ceil(Int, i/N_max)]
-    max_dt_arr[i] = dx/abs(J(gamma, rho[i]))
+    if i <= length(rho)
+        gamma = gammas[ceil(Int, i/N_max)]
+        dx = dxs[ceil(Int, i/N_max)]
+        max_dt_arr[i] = dx/abs(J(gamma, rho[i]))
+    elseif i <= length(rho) + length(incoming_fluxes)
+        j = i - length(rho)
+        gamma = gammas[j]
+        dx = dxs[j]
+        max_dt_arr[i] = dx/abs(J(gamma, incoming_fluxes[j]))
+    else
+        j = i - length(rho) - length(incoming_fluxes)
+        gamma = gammas[j]
+        dx = dxs[j]
+        max_dt_arr[i] = dx/abs(J(gamma, rho[j*N_max]*0.5))
+    end
     # J(gamma, rho[i])
     
 end
@@ -154,8 +209,7 @@ end
         road_index = ceil(Int, i/N_max)
 
         j = (i-1) % N_max + 1
-        incoming_flux = incoming_fluxes[road_index]
-        sigma = 0.5f0
+        
 
         gamma = gammas[road_index]
         dx = dxs[road_index]
@@ -166,22 +220,22 @@ end
             
 
         elseif j == 2
-            r__2 = u_0[i-1]
+            r__2 = incoming_fluxes[road_index]
             r__1 = u_0[i-1]
             r_0 = u_0[i]
             r_1 = u_0[i+1]
             r_2 = u_0[i+2]
         
         elseif j == 1
+            incoming_flux = incoming_fluxes[road_index]
+            r__2 = incoming_flux
+            r__1 = incoming_flux
+            r_0 = u_0[i]
+            r_1 = u_0[i+1]
+            r_2 = u_0[i+2]
 
+            u_1[i] = L_update(r__2, r__1, r_0, r_1, r_2, dx, dt, gamma)
 
-            D = incoming_flux <= sigma ? f(gammas[road_index], incoming_flux) : f(gammas[road_index], sigma)
-            S = u_0[i] <= sigma ? f(gammas[road_index], sigma) : f(gammas[road_index], u_0[i])
-    
-            f_intersection = min(D, S)
-
-            u_1[i] = u_0[i] - 0.5f0 * dt / dx * (numerical_flux(u_0[i], u_0[i], u_0[i+1], u_0[i+2], gamma, dt, dx)
-                        - f_intersection )
         
         elseif j == N_vals[road_index] - 1
             r__2 = u_0[i-2]
@@ -206,9 +260,16 @@ end
             r_2 = u_0[i+2]
         end
         if j != 1
-            u_1[i] = u_0[i] -0.5f0 * dt / dx * (numerical_flux(r__1, r_0, r_1, r_2, gamma, dt, dx) - numerical_flux(r__2, r__1, r_0, r_1, gamma, dt, dx))
+            # u_1[i] = u_0[i] -0.5f0 * dt / dx * (numerical_flux(r__1, r_0, r_1, r_2, gamma, dt, dx) - numerical_flux(r__2, r__1, r_0, r_1, gamma, dt, dx))
+            u_1[i] = L_update(r__2, r__1, r_0, r_1, r_2, dx, dt, gamma)
         end
+
     end
+end
+
+@kernel function avg_kernel!(u_0, u_2, u_1)
+    i = @index(Global)
+    u_1[i] = 0.5f0*(u_0[i] + u_2[i])
 end
 
 function numerical_flux(u_0, u_1, u_2, u_3, gamma, dt, dx)
@@ -217,15 +278,9 @@ function numerical_flux(u_0, u_1, u_2, u_3, gamma, dt, dx)
     
 end
 
-function update_rho!(update, u_2, u_1, u, u1, u2, dt, dx, gamma)
-    update = 0.5f0 * dt / dx * (F(u, u1, gamma) - F(u_1, u, gamma)
-                    + F(u - dt/dx*(F(u, u1, gamma) - F(u_1, u, gamma)), 
-                    u1 - dt/dx*(F(u1, u2, gamma) - F(u, u1, gamma)), gamma)
 
-                    - F(u_1 - dt/dx*(F(u_1, u, gamma) - F(u_2, u_1, gamma)), 
-                    u - dt/dx*(F(u, u1, gamma) - F(u_1, u, gamma)), gamma))
-    return
-end
+
+
 
 function intersection_solver_ka!(u_0, u_1, intersection, dt, gammas, N_max, N_vals, device_string)
     # classify the intersection

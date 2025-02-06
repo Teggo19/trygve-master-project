@@ -3,16 +3,16 @@ using Interpolations
 
 function main_incoming_flux(t)
     # random number between 0.5 and 0.7
-    base = 0.65f0
+    base = 0.7f0
     # random number between 0.1 and .3
-    amplitude = 0.1f0
+    amplitude = 0.2f0
     # random number between 1 and 10
     frequency = 1.f0
     return base + amplitude*sin(2*pi*frequency*t/100)
 end
 
 function side_incoming_flux(t)
-    base = 0.25f0 
+    base = 0.55f0 
     amplitude = 0.05f0
     frequency = 9.f0
     return base + amplitude*sin(2*pi*frequency*t/100)
@@ -38,19 +38,19 @@ function make_test_trafficProblem(M, N)
     for i in 1:(2*M*(M+1))
         if i <= M*(M+1)
             if i < M+1 && i%2 == 1
-                roads[i] = TrafficSim.Road{Float64, Float32}(i, 100., main_road_vmax, 0.5, N, 1/N, main_incoming_flux)
+                roads[i] = TrafficSim.Road{Float64, Float32}(i, 100.f0, main_road_vmax, 0.5f0, N, 1/N, main_incoming_flux)
             elseif i > M^2 && (i-M^2)%2 == 0
-                roads[i] = TrafficSim.Road{Float64, Float32}(i, 100., main_road_vmax, 0.5, N, 1/N, main_incoming_flux)
+                roads[i] = TrafficSim.Road{Float64, Float32}(i, 100.f0, main_road_vmax, 0.5f0, N, 1/N, main_incoming_flux)
             else
-                roads[i] = TrafficSim.Road{Float64, Float32}(i, 100., main_road_vmax, 0.5, N, 1/N, zero_flux)
+                roads[i] = TrafficSim.Road{Float64, Float32}(i, 100.f0, main_road_vmax, 0.5f0, N, 1/N, zero_flux)
             end
         else
             if i <= M^2 + 2*M && (i-M*(M+1))%2 == 0
-                roads[i] = TrafficSim.Road{Float64, Float32}(i, 30., side_road_vmax, 0.5, N, 1/N, side_incoming_flux)
+                roads[i] = TrafficSim.Road{Float64, Float32}(i, 30.f0, side_road_vmax, 0.5f0, N, 1/N, side_incoming_flux)
             elseif i > M*(2*M+1) && (i-M*(2*M+1))%2 == 1
-                roads[i] = TrafficSim.Road{Float64, Float32}(i, 30., side_road_vmax, 0.5, N, 1/N, side_incoming_flux)
+                roads[i] = TrafficSim.Road{Float64, Float32}(i, 30.f0, side_road_vmax, 0.5f0, N, 1/N, side_incoming_flux)
             else
-                roads[i] = TrafficSim.Road{Float64, Float32}(i, 30., side_road_vmax, 0.5, N, 1/N, zero_flux)
+                roads[i] = TrafficSim.Road{Float64, Float32}(i, 30.f0, side_road_vmax, 0.5f0, N, 1/N, zero_flux)
             end
 
         end
@@ -81,7 +81,8 @@ function make_test_trafficProblem(M, N)
     #trafficProblem = TrafficSim.TrafficProblem(roads, [])
 
     rho_read = [[0.0f0 for i in 1:100] for j in 1:24]
-    open("src/test_case_M=3_N=1000.txt") do io
+    #open("src/test_case_M=3_N=1000.txt") do io
+    open("TrafficSim.jl/src/test_case_M=3_N=1000.txt") do io
         i = 1
         for line in eachline(io)
             rho_read[i] = eval(Meta.parse(line))
@@ -94,6 +95,11 @@ function make_test_trafficProblem(M, N)
 
     x = range(0, 1, N)
     U_0 = [zeros(Float32, N) for i in 1:M*(M+1)*2]
+
+    for i in 1:M*(M+1)
+        U_0[i] = [0.5f0*x_val for x_val in x]
+    end
+    """
     for i in 1:M*(M+1)*2
         if i <= M*(M+1)
             U_0[i] = [interpolations[(i-1)%12+1](x) for x in x]
@@ -101,7 +107,7 @@ function make_test_trafficProblem(M, N)
             U_0[i] = [interpolations[(i-1)%12+12+1](x) for x in x]
         end
     end
-
+    """
     return trafficProblem, U_0
 end
 
