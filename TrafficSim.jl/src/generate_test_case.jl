@@ -82,7 +82,7 @@ function make_test_trafficProblem(M, N)
 
     rho_read = [[0.0f0 for i in 1:100] for j in 1:24]
     #open("src/test_case_M=3_N=1000.txt") do io
-    open("src/test_case_M=3_N=1000.txt") do io
+    open("TrafficSim.jl/src/test_case_M=3_N=1000.txt") do io
         i = 1
         for line in eachline(io)
             rho_read[i] = eval(Meta.parse(line))
