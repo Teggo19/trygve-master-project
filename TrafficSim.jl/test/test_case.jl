@@ -91,16 +91,16 @@ cpu_times_1 = [test_case_M3(N, "cpu") for N in N_vals]
 
 python_times_1 = [0.0146576, 0.011741, 0.0118774, 0.01394056, 0.03967956, 0.19785327, 7.4786]
 
-plot(N_vals, gpu_times_1, label = "GPU", xaxis=:log, yaxis=:log, xlabel="Number of grids per road", ylabel="Time per step (s)", color=:blue, title = "3x3 grid with varying number of cells per road")
+plot(N_vals, gpu_times_1, label = "GPU", xaxis=:log, yaxis=:log, xlabel="Number of grids per road", ylabel="Time per step (s)", color=:blue)# title = "3x3 grid with varying number of cells per road")
 # add scatter plot for eveay value
-scatter!(N_vals, gpu_times_1, label = "GPU", xaxis=:log, yaxis=:log, color=:blue)
+scatter!(N_vals, gpu_times_1, primary=false, xaxis=:log, yaxis=:log, color=:blue)
 plot!(N_vals, cpu_times_1, label = "CPU", xaxis=:log, yaxis=:log, color=:green)
-scatter!(N_vals, cpu_times_1, label = "CPU", xaxis=:log, yaxis=:log, color=:green)
+scatter!(N_vals, cpu_times_1, primary=false, xaxis=:log, yaxis=:log, color=:green)
 plot!(N_vals, python_times_1, label = "Python", xaxis=:log, yaxis=:log, color=:red)
-scatter!(N_vals, python_times_1, label = "Python", xaxis=:log, yaxis=:log, color=:red)
+scatter!(N_vals, python_times_1, primary=false, xaxis=:log, yaxis=:log, color=:red)
 plot!(legend=:topleft)
 # save plot as a png file
-savefig("cells_per_road.png")
+savefig("cells_per_road_2.png")
 
 N = 10000
 M_vals = 4:2:40
@@ -108,12 +108,28 @@ gpu_times_2 = [test_case(N, M, "gpu") for M in M_vals]
 
 cpu_times_2 = [test_case(N, M, "cpu") for M in M_vals]
 python_times_2 = [0.021393174216860815, 0.039512645630609425, 0.06755207833789643, 0.10304125150044759, 0.14736841973804293, 0.2002872966584705, 0.2564094974881127, 0.32325189454214914, 0.39804472242082867, 0.47872541064307805, 0.5692330428532192, 0.671597923551287, 0.7764394396827334, 0.8886502129690987, 1.013495922088623, 1.1416500977107458, 1.2827952929905482, 1.430901220866612, 1.5840960684276761]
-plot(M_vals, gpu_times_2, label = "GPU", xlabel="Size of the traffic grid", ylabel="Time per step (s)", color=:blue, title = "10000 cells per road with varying grid size", yaxis=:log)
-scatter!(M_vals, gpu_times_2, label = "GPU", color=:blue, yaxis=:log)
+plot(M_vals, gpu_times_2, label = "GPU", xlabel="Size of the traffic grid", ylabel="Time per step (s)", color=:blue)# title = "10000 cells per road with varying grid size", yaxis=:log)
+scatter!(M_vals, gpu_times_2, primary=false, color=:blue, yaxis=:log)
 plot!(M_vals, cpu_times_2, label = "CPU", color=:green, yaxis=:log)
-scatter!(M_vals, cpu_times_2, label = "CPU", color=:green, yaxis=:log)
+scatter!(M_vals, cpu_times_2, primary=false, color=:green, yaxis=:log)
 plot!(M_vals, python_times_2, label = "Python", color=:red, yaxis=:log)
-scatter!(M_vals, python_times_2, label = "Python", color=:red, yaxis=:log)
+scatter!(M_vals, python_times_2, primary=false, color=:red, yaxis=:log)
 plot!(legend=:topleft)
 
-savefig("grid_size.png")
+savefig("grid_size_2.png")
+
+using Printf
+function print_latex_table(N_vals, gpu_times, cpu_times, python_times)
+    println("\\begin{tabular}{|c|c|c|c|}")
+    println("\\hline")
+    println("N & GPU & CPU & Python \\\\")
+    println("\\hline")
+    for i in 1:length(N_vals)
+        # print the values in scientific notation with 4 decimal places
+        println("\$10^$i\$ & $(@sprintf("%.5f", gpu_times[i])) & $(@sprintf("%.5f", cpu_times[i])) & $(@sprintf("%.5f", python_times[i])) \\\\")
+    end
+    println("\\hline")
+    println("\\end{tabular}")
+end
+
+print_latex_table(N_vals, gpu_times_1, cpu_times_1, python_times_1)
